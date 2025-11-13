@@ -1,4 +1,5 @@
 # pyright: reportInvalidTypeForm=false
+from operator import is_
 import taichi as ti
 
 PI = 3.14159265
@@ -42,15 +43,30 @@ def reflectance(cosine, ref_idx):
 
 @ti.dataclass
 class Ray:
+    """Ray in 3D space."""
     origin: ti.types.vector(3, ti.f32)
     direction: ti.types.vector(3, ti.f32)
     
     @ti.func
     def at(self, t):
+        """Compute the point along the ray at parameter t."""
         return self.origin + t * self.direction
 
 @ti.data_oriented
 class Sphere:
+    """A sphere object in the scene.
+    
+    Parameters
+    ----------
+    center : ti.Vector
+        The center of the sphere.
+    radius : float
+        The radius of the sphere.
+    material : int
+        The material type of the sphere.
+    color : ti.Vector
+        The color of the sphere.
+    """
     def __init__(self, center, radius, material, color):
         self.center = center
         self.radius = radius
@@ -72,12 +88,12 @@ class Sphere:
         if discriminant > 0:
             sqrtd = ti.sqrt(discriminant)
             root = (-b - sqrtd) / (2 * a)
-            if root < t_min or root > t_max:
+            if t_min <= root <= t_max:
+                is_hit = True
+            else:
                 root = (-b + sqrtd) / (2 * a)
                 if root >= t_min and root <= t_max:
                     is_hit = True
-            else:
-                is_hit = True
         if is_hit:
             hit_point = ray.at(root)
             hit_point_normal = (hit_point - self.center) / self.radius
@@ -90,15 +106,44 @@ class Sphere:
 
 @ti.data_oriented
 class Hittable_list:
+    """A list of hittable objects in the scene."""
     def __init__(self):
         self.objects = []
     def add(self, obj):
+        """Add a hittable object to the list."""
         self.objects.append(obj)
     def clear(self):
+        """Remove all hittable objects from the list."""
         self.objects = []
 
     @ti.func
     def hit(self, ray, t_min=0.001, t_max=10e8):
+        """Check for the closest hit of the ray with any object in the list. 
+        
+        Parameters
+        ----------
+        ray : Ray
+            The ray to test for intersections.
+        t_min : float, optional
+            Minimum t value to consider for intersections. Default is 0.001.
+        t_max : float, optional
+            Maximum t value to consider for intersections. Default is 10e8.
+
+        Returns
+        -------
+        is_hit : bool
+            True if the ray hits any object, False otherwise.
+        hit_point : ti.Vector
+            The point of intersection if a hit occurs.
+        hit_point_normal : ti.Vector
+            The normal at the point of intersection if a hit occurs.
+        front_face : bool
+            True if the ray hits the front face of the object, False otherwise.
+        material : int
+            The material type of the hit object.
+        color : ti.Vector
+            The color of the hit object.        
+        """
         closest_t = t_max
         is_hit = False
         front_face = False
@@ -143,8 +188,41 @@ class Hittable_list:
 
 @ti.data_oriented
 class Camera:
-    def __init__(self, fov=60, aspect_ratio=1.0):
-        # Camera parameters
+    """Camera used to generate rays in a 3D scene.
+
+    Parameters
+    ----------
+    fov : float, optional
+        Horizontal field of view in degrees. Default is 60.
+    aspect_ratio : float, optional
+        Aspect ratio of the camera (width / height). Default is 1.0.
+
+    Attributes
+    ----------
+    lookfrom : ti.Vector.field
+        The position of the camera in world space.
+    lookat : ti.Vector.field
+        The point the camera is looking at.
+    vup : ti.Vector.field
+        The up direction of the camera. It should be roughly orthogonal to
+        the vector from ``lookfrom`` to ``lookat``; any non-orthogonal
+        component is removed during reset.
+    fov : float
+        Horizontal field of view in degrees.
+    aspect_ratio : float
+        Aspect ratio of the camera (width / height).
+    cam_lower_left_corner : ti.Vector.field
+        The lower-left corner of the camera's image plane.
+    cam_horizontal : ti.Vector.field
+        The horizontal span of the camera's image plane.
+    cam_vertical : ti.Vector.field
+        The vertical span of the camera's image plane.
+    cam_origin : ti.Vector.field
+        The origin point of the camera (ray origin).
+    """
+
+    def __init__(self, fov: float = 60.0, aspect_ratio: float = 1.0):
+        # Camera parameters (see class docstring for details).
         self.lookfrom = ti.Vector.field(3, dtype=ti.f32, shape=())
         self.lookat = ti.Vector.field(3, dtype=ti.f32, shape=())
         self.vup = ti.Vector.field(3, dtype=ti.f32, shape=())
@@ -155,29 +233,52 @@ class Camera:
         self.cam_horizontal = ti.Vector.field(3, dtype=ti.f32, shape=())
         self.cam_vertical = ti.Vector.field(3, dtype=ti.f32, shape=())
         self.cam_origin = ti.Vector.field(3, dtype=ti.f32, shape=())
+
         self.reset()
 
     @ti.kernel
     def reset(self):
+        """Reset the camera to a default pose and recompute derived vectors."""
         self.lookfrom[None] = [0.0, 1.0, -5.0]
         self.lookat[None] = [0.0, 1.0, -1.0]
         self.vup[None] = [0.0, 1.0, 0.0]
+
         theta = self.fov * (PI / 180.0)
         half_height = ti.tan(theta / 2.0)
         half_width = self.aspect_ratio * half_height
+
         self.cam_origin[None] = self.lookfrom[None]
         w = (self.lookfrom[None] - self.lookat[None]).normalized()
         u = (self.vup[None].cross(w)).normalized()
         v = w.cross(u)
-        self.cam_lower_left_corner[
-            None] = self.cam_origin[None] - half_width * u - half_height * v - w
+
+        self.cam_lower_left_corner[None] = (
+            self.cam_origin[None] - w - half_width * u - half_height * v
+        )
         self.cam_horizontal[None] = 2 * half_width * u
         self.cam_vertical[None] = 2 * half_height * v
 
     @ti.func
-    def get_ray(self, u, v):
-        return Ray(self.cam_origin[None],
-                   self.cam_lower_left_corner[None] \
-                   + u * self.cam_horizontal[None] \
-                   + v * self.cam_vertical[None] \
-                   - self.cam_origin[None])
+    def get_ray(self, u: float, v: float) -> Ray:
+        """Generate a ray from the camera through the image plane.
+
+        Parameters
+        ----------
+        u : float
+            Horizontal coordinate on the image plane in ``[0, 1]``.
+        v : float
+            Vertical coordinate on the image plane in ``[0, 1]``.
+
+        Returns
+        -------
+        Ray
+            Ray starting at ``cam_origin`` and passing through the
+            corresponding point on the image plane.
+        """
+        return Ray(
+            self.cam_origin[None],
+            self.cam_lower_left_corner[None]
+            + u * self.cam_horizontal[None]
+            + v * self.cam_vertical[None]
+            - self.cam_origin[None],
+        )

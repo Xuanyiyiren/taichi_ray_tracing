@@ -1,23 +1,23 @@
 import taichi as ti
 import numpy as np
 import argparse
-from ray_tracing_models import Ray, Camera, Hittable_list, Sphere, PI
+from ray_tracing_models import Camera, Hittable_list, Sphere
 
 ti.init(arch=ti.gpu)
-PI = 3.14159265
 
 # Canvas
-aspect_ratio = 1.0
 image_width = 800
-image_height = int(image_width / aspect_ratio)
+image_height = 800
 canvas = ti.Vector.field(3, dtype=ti.f32, shape=(image_width, image_height))
 
 # Rendering parameters
 samples_per_pixel = 4
-max_depth = 10
 
 @ti.kernel
 def render():
+    """Core kernel for rendering the scene,
+       iterating over each pixel, shooting rays,
+       and accumulating color."""
     for i, j in canvas:
         u = (i + ti.random()) / image_width
         v = (j + ti.random()) / image_height
@@ -30,10 +30,9 @@ def render():
 
 @ti.func
 def ray_color(ray):
+    """Extract color information from the ray-scene intersection."""
     default_color = ti.Vector([1.0, 1.0, 1.0])
-    scattered_origin = ray.origin
-    scattered_direction = ray.direction
-    is_hit, hit_point, hit_point_normal, front_face, material, color = scene.hit(Ray(scattered_origin, scattered_direction))
+    is_hit, _, _, _, _, color = scene.hit(ray)
     if is_hit:
         default_color = color
     return default_color
@@ -41,13 +40,9 @@ def ray_color(ray):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Naive Ray Tracing')
     parser.add_argument(
-        '--max_depth', type=int, default=1, help='max depth (default: 10)')
-    parser.add_argument(
-        '--samples_per_pixel', type=int, default=4, help='samples_per_pixel  (default: 4)')
+        '-s', '--samples_per_pixel', type=int, default=4, help='samples_per_pixel (default: 4)')
     args = parser.parse_args()
 
-    max_depth = args.max_depth
-    assert max_depth == 1
     samples_per_pixel = args.samples_per_pixel
 
     scene = Hittable_list()
