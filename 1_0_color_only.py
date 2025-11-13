@@ -22,7 +22,7 @@ def render():
         u = (i + ti.random()) / image_width
         v = (j + ti.random()) / image_height
         color = ti.Vector([0.0, 0.0, 0.0])
-        for n in range(samples_per_pixel):
+        for n in ti.static(range(samples_per_pixel)):
             ray = camera.get_ray(u, v)
             color += ray_color(ray)
         color /= samples_per_pixel

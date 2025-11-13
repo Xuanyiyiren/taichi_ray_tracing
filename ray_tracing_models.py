@@ -1,3 +1,4 @@
+# pyright: reportInvalidTypeForm=false
 import taichi as ti
 
 PI = 3.14159265
@@ -175,4 +176,8 @@ class Camera:
 
     @ti.func
     def get_ray(self, u, v):
-        return Ray(self.cam_origin[None], self.cam_lower_left_corner[None] + u * self.cam_horizontal[None] + v * self.cam_vertical[None] - self.cam_origin[None])
+        return Ray(self.cam_origin[None],
+                   self.cam_lower_left_corner[None] \
+                   + u * self.cam_horizontal[None] \
+                   + v * self.cam_vertical[None] \
+                   - self.cam_origin[None])
