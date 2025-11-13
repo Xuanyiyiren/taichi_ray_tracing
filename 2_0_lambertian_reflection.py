@@ -1,10 +1,8 @@
 import taichi as ti
 import numpy as np
 import argparse
-from ray_tracing_models import Ray, Camera, Hittable_list, Sphere, PI
+from ray_tracing_models import Ray, Camera, Hittable_list, Sphere
 ti.init(arch=ti.gpu)
-
-PI = 3.14159265
 
 # Canvas
 aspect_ratio = 1.0
@@ -18,11 +16,14 @@ max_depth = 10
 
 @ti.kernel
 def render():
+    """Core kernel for rendering the scene,
+       iterating over each pixel, shooting rays,
+       and accumulating color."""
     for i, j in canvas:
         u = (i + ti.random()) / image_width
         v = (j + ti.random()) / image_height
         color = ti.Vector([0.0, 0.0, 0.0])
-        for n in range(samples_per_pixel):
+        for n in range(samples_per_pixel):  # Reverted to original loop logic
             ray = camera.get_ray(u, v)
             color += ray_color(ray)
         color /= samples_per_pixel
@@ -30,16 +31,10 @@ def render():
 
 
 @ti.func
-def to_light_source(hit_point, light_source):
-    return light_source - hit_point
-
-# Lambertian reflection model
-@ti.func
 def ray_color(ray):
+    """Extract color information from the ray-scene intersection."""
     default_color = ti.Vector([1.0, 1.0, 1.0])
-    scattered_origin = ray.origin
-    scattered_direction = ray.direction
-    is_hit, hit_point, hit_point_normal, front_face, material, color = scene.hit(Ray(scattered_origin, scattered_direction))
+    is_hit, hit_point, hit_point_normal, front_face, material, color = scene.hit(ray)  # Restored original logic
     if is_hit:
         if material == 0:
             default_color = color
@@ -47,6 +42,10 @@ def ray_color(ray):
             hit_point_to_source = to_light_source(hit_point, ti.Vector([0, 5.4 - 3.0, -1]))
             default_color = color * ti.max(hit_point_to_source.dot(hit_point_normal) / (hit_point_to_source.norm() * hit_point_normal.norm()), 0.0)
     return default_color
+
+@ti.func
+def to_light_source(hit_point, light_source):
+    return light_source - hit_point
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Naive Ray Tracing')
